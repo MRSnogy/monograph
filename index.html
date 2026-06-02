@@ -568,12 +568,6 @@ body.dark .settings-panel{box-shadow:0 8px 32px rgba(0,0,0,.5)}
 .review-stat .num{font-size:28px;font-weight:700;color:var(--accent)}
 .review-stat .lbl{font-size:12px;color:var(--text3);margin-top:4px}
 
-/* GOOGLE CALENDAR MOCK */
-.gcal-item{display:flex;gap:10px;padding:8px 10px;border-radius:6px;margin-bottom:6px;background:var(--surface2);align-items:center}
-.gcal-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.gcal-time{font-size:11px;color:var(--text3);white-space:nowrap}
-.gcal-title{font-size:13px;font-weight:500;flex:1}
-
 /* MODALS */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;z-index:1000;display:none}
 .modal-overlay.open{display:flex}
@@ -770,11 +764,6 @@ body.dark .q4{border-color:var(--border2)}
 .dp-block-meta{font-size:10.5px;color:var(--text2);margin-top:2px;line-height:1.2}
 .dp-block-done{opacity:.5}
 .dp-block-done .dp-block-title{text-decoration:line-through}
-.dp-block.gcal{
-  border-style:dashed;background:var(--hl-blue)!important;
-  border-color:var(--t-blue)!important;
-}
-body.dark .dp-block.gcal{background:var(--hl-blue)!important}
 /* resize handle */
 .dp-resize{
   position:absolute;bottom:0;left:0;right:0;height:8px;cursor:s-resize;
@@ -1161,19 +1150,6 @@ body.dark .kanban-col.drag-over{background:#0f2540}
         <div class="brain-dump-items" id="quick-brain-items"></div>
       </div>
 
-      <!-- Google Calendar Mock -->
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title">📆 Today's Schedule <span style="font-size:11px;color:var(--text3)">Mock • Google Calendar</span></div>
-          <div id="gcal-events"></div>
-          <button class="btn sm" onclick="syncGoogleCalendar()" style="margin-top:8px">🔄 Sync Calendar</button>
-        </div>
-        <div class="card">
-          <div class="card-title">✅ Google Tasks <span style="font-size:11px;color:var(--text3)">Mock</span></div>
-          <div id="gtasks-list"></div>
-          <button class="btn sm" onclick="pushToGoogleTasks()" style="margin-top:8px">⬆ Push to Google Tasks</button>
-        </div>
-      </div>
     </div>
 
     <!-- ======= TASKS ======= -->
@@ -1443,7 +1419,6 @@ body.dark .kanban-col.drag-over{background:#0f2540}
           <select id="dp-end-hour" onchange="saveDpSettings()"></select>
         </div>
         <div style="display:flex;gap:6px;margin-left:auto">
-          <button class="btn sm" onclick="fetchGoogleCalendarEvents()">⟳ Sync GCal</button>
           <button class="btn sm primary" onclick="openAddBlockModal()">+ Add Block</button>
         </div>
       </div>
@@ -1531,6 +1506,56 @@ body.dark .kanban-col.drag-over{background:#0f2540}
     <div class="modal-actions">
       <button class="btn" onclick="closeModal('modal-decision')">Cancel</button>
       <button class="btn primary" onclick="saveDecision()">Save Decision</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-edit-task">
+  <div class="modal">
+    <h2>✏ Edit Task</h2>
+    <input type="hidden" id="edit-task-id">
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="edit-task-title" placeholder="Task title…">
+    </div>
+    <div style="display:flex;gap:8px">
+      <div class="form-group" style="flex:1">
+        <label>Priority</label>
+        <select id="edit-task-priority">
+          <option value="high">🔴 High</option>
+          <option value="medium">🟡 Medium</option>
+          <option value="low">🟢 Low</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:1">
+        <label>Category</label>
+        <select id="edit-task-category">
+          <option value="Work">Work</option>
+          <option value="Health">Health</option>
+          <option value="Personal">Personal</option>
+          <option value="Finance">Finance</option>
+          <option value="Learning">Learning</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div class="form-group" style="flex:1">
+        <label>Due Date</label>
+        <input type="date" id="edit-task-due">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label>Repeat</label>
+        <select id="edit-task-recurring">
+          <option value="">No repeat</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-edit-task')">Cancel</button>
+      <button class="btn primary" onclick="saveEditTask()">Save</button>
     </div>
   </div>
 </div>
@@ -2178,6 +2203,7 @@ function taskHTML(t, compact=false) {
     ${!compact?`<div class="task-actions" style="display:flex;gap:4px;opacity:0;transition:opacity .1s">
       <button class="task-wn-btn" onclick="event.stopPropagation();workNowFromTask('${t.title.replace(/'/g,"\\'")}','${t.priority} · ${t.category}')" title="Work Now — start focus session">▶ Work Now</button>
       ${overdue?`<button class="btn sm" onclick="openProcModal(${t.id})" title="Why did you procrastinate?">😬</button>`:''}
+      <button class="btn sm" onclick="openEditTask(${t.id})" title="Edit task">✏</button>
       <button class="btn sm danger" onclick="deleteTask(${t.id})">✕</button>
     </div>`:''}
   </div>`;
@@ -2197,6 +2223,33 @@ function deleteTask(id) {
   S.tasks = S.tasks.filter(x=>x.id!==id);
   save('tasks');
   renderView(currentView);
+}
+
+function openEditTask(id) {
+  const t = S.tasks.find(x=>x.id===id);
+  if (!t) return;
+  document.getElementById('edit-task-id').value = String(t.id);
+  document.getElementById('edit-task-title').value = t.title;
+  document.getElementById('edit-task-priority').value = t.priority;
+  document.getElementById('edit-task-category').value = t.category;
+  document.getElementById('edit-task-due').value = t.dueDate || '';
+  document.getElementById('edit-task-recurring').value = t.recurring || '';
+  document.getElementById('modal-edit-task').classList.add('open');
+}
+
+function saveEditTask() {
+  const id = Number(document.getElementById('edit-task-id').value);
+  const t = S.tasks.find(x=>x.id===id);
+  if (!t) return;
+  t.title     = document.getElementById('edit-task-title').value.trim() || t.title;
+  t.priority  = document.getElementById('edit-task-priority').value;
+  t.category  = document.getElementById('edit-task-category').value;
+  t.dueDate   = document.getElementById('edit-task-due').value;
+  t.recurring = document.getElementById('edit-task-recurring').value;
+  save('tasks');
+  closeModal('modal-edit-task');
+  renderView(currentView);
+  showToast('Task updated', 'success');
 }
 
 function setFilter(f, el) {
@@ -2235,8 +2288,6 @@ function renderDashboard() {
   else el.innerHTML = top.map(t=>taskHTML(t,true)).join('');
 
   renderBrainDump('quick-brain-items');
-  renderGCal();
-  renderGTasks();
 }
 
 // ========================
@@ -2978,43 +3029,6 @@ function saveWeeklyReview() {
 }
 
 // ========================
-// GOOGLE CALENDAR MOCK
-// ========================
-const mockEvents = [
-  {time:'09:00',title:'Team Standup',color:'#2d6cdf'},
-  {time:'11:00',title:'Design Review',color:'#805ad5'},
-  {time:'14:00',title:'1:1 with Manager',color:'#38a169'},
-  {time:'16:30',title:'Focus Block',color:'#dd6b20'},
-];
-
-function renderGCal() {
-  const el = document.getElementById('gcal-events');
-  el.innerHTML = mockEvents.map(e=>`
-    <div class="gcal-item">
-      <div class="gcal-dot" style="background:${e.color}"></div>
-      <div class="gcal-time">${e.time}</div>
-      <div class="gcal-title">${e.title}</div>
-    </div>`).join('');
-}
-
-function renderGTasks() {
-  const el = document.getElementById('gtasks-list');
-  const top = S.tasks.filter(t=>!t.done).slice(0,4);
-  if (!top.length) { el.innerHTML='<div style="font-size:13px;color:var(--text3)">No pending tasks.</div>'; return; }
-  el.innerHTML = top.map(t=>`<div class="gcal-item"><div class="gcal-dot" style="background:var(--accent)"></div><div class="gcal-title">${t.title}</div><div style="font-size:11px;color:var(--text3)">${t.priority}</div></div>`).join('');
-}
-
-function syncGoogleCalendar() {
-  showToast('🔄 Google Calendar synced (mock)', 'info');
-  // TODO: integrate Google Calendar API - OAuth flow + calendar.events.list
-}
-
-function pushToGoogleTasks() {
-  showToast('⬆ Tasks pushed to Google Tasks (mock)', 'info');
-  // TODO: integrate Google Tasks API - tasks.tasklists.insert + tasks.tasks.insert
-}
-
-// ========================
 // DEADLINE CHECKER
 // ========================
 function checkDeadlines() {
@@ -3095,15 +3109,10 @@ function initProjects() {
       id: ts,
       name: 'My First Project',
       columns: [
-        { id: ts+1, title: 'To Do', cards: [
-          { id: ts+10, title: 'Research & planning', description: '', checklist: [], priority: 'high', category: 'Work', dueDate: '', twoMin: false, procReasons: [], createdAt: todayStr() },
-          { id: ts+11, title: 'Write project brief', description: '', checklist: [], priority: 'medium', category: 'Work', dueDate: '', twoMin: false, procReasons: [], createdAt: todayStr() },
-        ]},
-        { id: ts+2, title: 'In Progress', cards: [
-          { id: ts+20, title: 'Design mockups', description: 'Create wireframes and high-fidelity screens.', checklist: [{id:1,text:'Wireframes',done:true},{id:2,text:'High-fi screens',done:false},{id:3,text:'Prototype',done:false}], priority: 'high', category: 'Work', dueDate: '', twoMin: false, procReasons: [], createdAt: todayStr() },
-        ]},
-        { id: ts+3, title: 'Review', cards: [] },
-        { id: ts+4, title: 'Done', cards: [] },
+        { id: ts+1, title: 'To Do',       cards: [] },
+        { id: ts+2, title: 'In Progress', cards: [] },
+        { id: ts+3, title: 'Review',      cards: [] },
+        { id: ts+4, title: 'Done',        cards: [] },
       ]
     });
     S.activeProjectId = ts;
@@ -3624,14 +3633,6 @@ let dpResizing   = null; // {blockId, startY, startDuration}
 let dpCtxMenu    = null; // active context menu element
 let workNowBlockId = null;
 
-// Mock GCal events — keyed by date string (today gets events)
-const GCAL_EVENTS = [
-  {id:'gc1',title:'Team Standup',   startMinute:9*60,     duration:30,  date:todayStr()},
-  {id:'gc2',title:'Design Review',  startMinute:11*60,    duration:60,  date:todayStr()},
-  {id:'gc3',title:'1:1 Meeting',    startMinute:14*60,    duration:60,  date:todayStr()},
-  {id:'gc4',title:'Focus Block',    startMinute:16*60+30, duration:90,  date:todayStr()},
-];
-
 const CAT_COLORS = {
   Work:     {bg:'#e7f0fc',border:'#2383e2',dark:'#1c3052'},
   Health:   {bg:'#edf3ec',border:'#0f7b6c',dark:'#102620'},
@@ -3771,10 +3772,8 @@ function renderBlocks(start, end) {
 
   // Local blocks for this date
   const blocks = (S.timeBlocks||[]).filter(b => b.date === dpDate);
-  // GCal mock events for this date
-  const gcalBlocks = GCAL_EVENTS.filter(e => e.date === dpDate);
 
-  [...blocks, ...gcalBlocks.map(e=>({...e,source:'gcal'}))].forEach(block => {
+  blocks.forEach(block => {
     const topPx    = (block.startMinute - start*60) / 30 * DP_SLOT_H;
     const heightPx = Math.max(DP_SLOT_H, block.duration / 30 * DP_SLOT_H) - 3;
     if (block.startMinute < start*60 || block.startMinute >= end*60) return;
@@ -3784,18 +3783,17 @@ function renderBlocks(start, end) {
     const colors = CAT_COLORS[cat] || CAT_COLORS.default;
     const bg     = isDark ? colors.dark : colors.bg;
     const border = colors.border;
-    const isGcal = block.source === 'gcal';
     const isDone = block.completed;
 
     const div = document.createElement('div');
-    div.className = `dp-block ${isGcal?'gcal':''} ${isDone?'dp-block-done':''}`;
+    div.className = `dp-block ${isDone?'dp-block-done':''}`;
     div.dataset.blockId = block.id;
     div.style.cssText = `top:${topPx}px;height:${heightPx}px;background:${bg};border-left-color:${border}`;
     div.innerHTML = `
       <div class="dp-block-title">${escHtml(block.title)}</div>
-      ${heightPx > 36 ? `<div class="dp-block-meta">${formatMinute(block.startMinute)} · ${block.duration}min${block.isDeepWork?' · 🎯':''} ${isGcal?'· <em>GCal</em>':''}</div>` : ''}
-      ${!isGcal ? `<div class="dp-resize" onmousedown="dpResizeStart(event,'${block.id}')"></div>` : ''}`;
-    div.addEventListener('click', e => { e.stopPropagation(); showBlockMenu(e, block.id, isGcal); });
+      ${heightPx > 36 ? `<div class="dp-block-meta">${formatMinute(block.startMinute)} · ${block.duration}min${block.isDeepWork?' · 🎯':''}</div>` : ''}
+      <div class="dp-resize" onmousedown="dpResizeStart(event,'${block.id}')"></div>`;
+    div.addEventListener('click', e => { e.stopPropagation(); showBlockMenu(e, block.id); });
     layer.appendChild(div);
   });
 }
@@ -3871,11 +3869,9 @@ function dpResizeEnd() {
 }
 
 /* ── Block context menu ── */
-function showBlockMenu(e, blockId, isGcal) {
+function showBlockMenu(e, blockId) {
   closeBlockMenu();
-  const block = isGcal
-    ? GCAL_EVENTS.find(g=>g.id===blockId)
-    : (S.timeBlocks||[]).find(b=>b.id===blockId);
+  const block = (S.timeBlocks||[]).find(b=>b.id===blockId);
   if (!block) return;
 
   const menu = document.createElement('div');
@@ -3887,14 +3883,11 @@ function showBlockMenu(e, blockId, isGcal) {
     <div class="dp-ctx-item work-now" onclick="workNow('${escHtml(block.title)}','${block.category||''}','${blockId}')">
       ▶ Work Now
     </div>
-    ${!isGcal ? `
     <div class="dp-ctx-item" onclick="completeTimeBlock('${blockId}')">
       ${block.completed?'↩ Unmark':'✓ Mark Complete'}
     </div>
     <div class="dp-ctx-item" onclick="openEditBlock('${blockId}')">✏ Edit</div>
-    <div class="dp-ctx-item" onclick="pushBlockToGoogleCalendar('${blockId}')">📆 Push to GCal</div>
-    <div class="dp-ctx-item danger" onclick="deleteTimeBlock('${blockId}')">🗑 Delete</div>` : `
-    <div class="dp-ctx-item" style="color:var(--text3);font-size:11px;cursor:default">Google Calendar event</div>`}`;
+    <div class="dp-ctx-item danger" onclick="deleteTimeBlock('${blockId}')">🗑 Delete</div>`;
 
   document.body.appendChild(menu);
   dpCtxMenu = menu;
@@ -4057,26 +4050,6 @@ function syncWorkNowDisplay() {
   const offset = circ*(1 - pomoSecondsLeft/Math.max(pomoTotalSeconds,1));
   const ring   = document.getElementById('wn-ring');
   if (ring) ring.style.strokeDashoffset = String(circ - offset);
-}
-
-/* ── Google Calendar mocks ── */
-function fetchGoogleCalendarEvents() {
-  // TODO: Google Calendar API integration
-  // OAuth scope: https://www.googleapis.com/auth/calendar.readonly
-  // Endpoint:    GET https://www.googleapis.com/calendar/v3/calendars/primary/events
-  // Params:      timeMin, timeMax, singleEvents:true, orderBy:'startTime'
-  showToast('📆 GCal synced (mock — 4 events loaded)', 'info');
-  renderBlocks(dpStartHour(), dpEndHour());
-}
-
-function pushBlockToGoogleCalendar(blockId) {
-  // TODO: Google Calendar API integration
-  // OAuth scope: https://www.googleapis.com/auth/calendar.events
-  // Endpoint:    POST https://www.googleapis.com/calendar/v3/calendars/primary/events
-  // Body:        {summary, start:{dateTime}, end:{dateTime}}
-  const b = (S.timeBlocks||[]).find(x=>x.id===blockId);
-  showToast(`📤 "${b?.title}" pushed to GCal (mock)`, 'info');
-  closeBlockMenu();
 }
 
 // ========================
@@ -4519,28 +4492,6 @@ loadTypographyPrefs();
 initFirebase();
 updateTopbarDate();
 setPomoMode('focus');
-
-// Seed demo data if empty — must run BEFORE first render
-if (!S.tasks.length && !S.habits.length) {
-  S.tasks = [
-    {id:1, title:'Review project proposal', priority:'high', category:'Work', dueDate:todayStr(), recurring:'', twoMin:false, done:false, createdAt:todayStr(), procReasons:[]},
-    {id:2, title:'Reply to client email', priority:'high', category:'Work', dueDate:todayStr(), recurring:'', twoMin:true, done:false, createdAt:todayStr(), procReasons:[]},
-    {id:3, title:'30-minute walk', priority:'medium', category:'Health', dueDate:'', recurring:'daily', twoMin:false, done:false, createdAt:todayStr(), procReasons:[]},
-    {id:4, title:'Read 20 pages', priority:'low', category:'Learning', dueDate:'', recurring:'daily', twoMin:false, done:false, createdAt:todayStr(), procReasons:[]},
-  ];
-  S.habits = [
-    {id:1, name:'Morning meditation', goal:'Meditate 10 min daily for mental clarity', weeklyTarget:7, completions:[todayStr(), addDays(todayStr(),-1), addDays(todayStr(),-2)]},
-    {id:2, name:'Exercise',           goal:'Build consistent workout habit — 4x per week', weeklyTarget:4, completions:[addDays(todayStr(),-1), addDays(todayStr(),-3)]},
-    {id:3, name:'Read for 20 min',    goal:'Read 12 books this year', weeklyTarget:5, completions:[todayStr(), addDays(todayStr(),-2), addDays(todayStr(),-4)]},
-    {id:4, name:'No social media before 10am', goal:'Protect morning focus time', weeklyTarget:5, completions:[]},
-  ];
-  S.goals = [
-    {id:1, title:'Launch SaaS product by Q4', type:'long', done:false},
-    {id:2, title:'Build consistent exercise habit', type:'short', done:false},
-    {id:3, title:'Complete deep work session', type:'daily', done:false},
-  ];
-  saveAll();
-}
 
 renderDashboard();
 checkDeadlines();
