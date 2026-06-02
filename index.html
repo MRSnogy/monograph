@@ -1645,6 +1645,19 @@ body.dark .kanban-col.drag-over{background:#0f2540}
   </div>
 </div>
 
+<!-- RECURRING DELETE CONFIRM -->
+<div class="modal-overlay" id="modal-recurring-confirm">
+  <div class="modal" style="max-width:380px">
+    <h2 id="rcf-title" style="font-size:15px;font-weight:600;margin-bottom:8px"></h2>
+    <p id="rcf-body" style="font-size:13px;color:var(--text2);margin-bottom:20px"></p>
+    <div class="modal-actions" style="flex-direction:column;gap:8px">
+      <button class="btn" style="width:100%;justify-content:center" id="rcf-once-btn"></button>
+      <button class="btn danger" style="width:100%;justify-content:center" id="rcf-all-btn"></button>
+      <button class="btn" style="width:100%;justify-content:center;color:var(--text3)" onclick="closeModal('modal-recurring-confirm')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- KANBAN NAME INPUT MODAL (board & column) -->
 <div class="modal-overlay" id="modal-name-input">
   <div class="modal" style="width:360px">
@@ -2253,15 +2266,82 @@ function toggleTask(id) {
 }
 
 function deleteTask(id) {
+  const t = S.tasks.find(x=>x.id===id);
+  if (!t) return;
+  if (t.recurring) {
+    openRecurringConfirm(id, 'delete');
+  } else {
+    _doDeleteTask(id);
+  }
+}
+
+function discardTask(id) {
+  const t = S.tasks.find(x=>x.id===id);
+  if (!t) return;
+  if (t.recurring) {
+    openRecurringConfirm(id, 'discard');
+  } else {
+    _openProcForDiscard(id);
+  }
+}
+
+function openRecurringConfirm(id, action) {
+  const t = S.tasks.find(x=>x.id===id);
+  if (!t) return;
+  const label = action === 'discard' ? 'Discard' : 'Delete';
+  document.getElementById('rcf-title').textContent = `${label} recurring task?`;
+  document.getElementById('rcf-body').textContent  = `"${t.title}" repeats ${t.recurring}.`;
+  const onceBtn = document.getElementById('rcf-once-btn');
+  const allBtn  = document.getElementById('rcf-all-btn');
+  onceBtn.textContent = `${label} just today`;
+  allBtn.textContent  = 'Stop recurring & remove entirely';
+  onceBtn.onclick = () => {
+    closeModal('modal-recurring-confirm');
+    // Skip today: bump the done-parent's completedAt to today so next
+    // spawn is tomorrow, then delete this undone instance
+    _skipRecurringToday(t);
+    if (action === 'discard') _openProcForDiscard(id);
+    else { _doDeleteTask(id); }
+  };
+  allBtn.onclick = () => {
+    closeModal('modal-recurring-confirm');
+    // Remove ALL tasks with same title + recurring (parent + all copies)
+    _deleteAllRecurring(t.title, t.recurring);
+    if (action === 'discard') {
+      // proc modal already makes no sense since task is gone — just toast
+      showToast('Recurring task removed', 'info');
+    }
+  };
+  document.getElementById('modal-recurring-confirm').classList.add('open');
+}
+
+function _skipRecurringToday(t) {
+  // Find the done parent with same title+recurring and set its completedAt to today
+  // so processRecurring won't recreate until tomorrow
+  S.tasks.forEach(x => {
+    if (x.title === t.title && x.recurring === t.recurring && x.done && x.id !== t.id) {
+      x.completedAt = todayStr();
+    }
+  });
+  save('tasks');
+}
+
+function _deleteAllRecurring(title, recurring) {
+  S.tasks = S.tasks.filter(x => !(x.title === title && x.recurring === recurring));
+  save('tasks');
+  renderView(currentView);
+}
+
+function _doDeleteTask(id) {
   S.tasks = S.tasks.filter(x=>x.id!==id);
   save('tasks');
   renderView(currentView);
 }
 
-function discardTask(id) {
-  S.currentProcContext  = 'discard';
-  S.currentProcTaskId   = id;
-  S.currentProcTags     = [];
+function _openProcForDiscard(id) {
+  S.currentProcContext = 'discard';
+  S.currentProcTaskId  = id;
+  S.currentProcTags    = [];
   const t = S.tasks.find(x=>x.id===id);
   document.getElementById('proc-task-name').textContent = t?.title || '';
   document.querySelectorAll('.proc-tag').forEach(el=>el.classList.remove('selected'));
