@@ -1182,10 +1182,10 @@ body.dark .kanban-col.drag-over{background:#0f2540}
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
           </select>
-          <div class="two-min-toggle" onclick="document.getElementById('task-twomin').click()">
+          <label class="two-min-toggle" for="task-twomin">
             <input type="checkbox" id="task-twomin">
-            <label for="task-twomin">⚡ Under 2 minutes?</label>
-          </div>
+            <span>⚡ Under 2 minutes?</span>
+          </label>
           <button class="btn primary" onclick="addTask()">Add Task</button>
         </div>
       </div>
