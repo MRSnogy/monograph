@@ -469,10 +469,13 @@ body.dark .settings-panel{box-shadow:0 8px 32px rgba(0,0,0,.5)}
 .habit-week-bar{width:60px;height:5px;background:var(--border);border-radius:3px;overflow:hidden}
 .habit-week-fill{height:100%;border-radius:3px;transition:width .4s ease}
 .habit-streak{font-size:12px;font-weight:600;color:var(--t-orange);white-space:nowrap;flex-shrink:0}
-.habit-card-dots{display:flex;gap:4px;flex-shrink:0}
+.habit-card-dots{display:flex;gap:6px;flex-shrink:0}
+.habit-dot-wrap{display:flex;flex-direction:column;align-items:center;gap:2px}
+.habit-dot-label{font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;line-height:1}
 .habit-dot{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--border2);cursor:pointer;transition:all .1s;flex-shrink:0}
 .habit-dot.done{background:var(--t-green);border-color:var(--t-green)}
-.habit-dot:hover:not(.done){background:var(--surface3)}
+.habit-dot.future{opacity:.3;cursor:default}
+.habit-dot:hover:not(.done):not(.future){background:var(--surface3)}
 .habit-card-actions{display:flex;gap:4px;flex-shrink:0}
 
 /* Expanded body */
@@ -1553,6 +1556,12 @@ body.dark .kanban-col.drag-over{background:#0f2540}
         </select>
       </div>
     </div>
+    <div class="form-group">
+      <label>Link to Habit <span style="font-weight:400;color:var(--text3)">— completing this task will tick the habit</span></label>
+      <select id="edit-task-habit">
+        <option value="">No habit link</option>
+      </select>
+    </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal('modal-edit-task')">Cancel</button>
       <button class="btn primary" onclick="saveEditTask()">Save</button>
@@ -2160,6 +2169,7 @@ function addTask() {
     done: false,
     createdAt: todayStr(),
     procReasons: [],
+    linkedHabitId: null,
   };
   S.tasks.unshift(task);
   save('tasks');
@@ -2204,6 +2214,7 @@ function taskHTML(t, compact=false) {
       <button class="task-wn-btn" onclick="event.stopPropagation();workNowFromTask('${t.title.replace(/'/g,"\\'")}','${t.priority} · ${t.category}')" title="Work Now — start focus session">▶ Work Now</button>
       ${overdue?`<button class="btn sm" onclick="openProcModal(${t.id})" title="Why did you procrastinate?">😬</button>`:''}
       <button class="btn sm" onclick="openEditTask(${t.id})" title="Edit task">✏</button>
+      <button class="btn sm" onclick="discardTask(${t.id})" title="Discard — log procrastination reason" style="color:var(--t-orange)">Discard</button>
       <button class="btn sm danger" onclick="deleteTask(${t.id})">✕</button>
     </div>`:''}
   </div>`;
@@ -2213,16 +2224,48 @@ function toggleTask(id) {
   const t = S.tasks.find(x=>x.id===id);
   if (!t) return;
   t.done = !t.done;
-  if (t.done) t.completedAt = todayStr();
+  if (t.done) {
+    t.completedAt = todayStr();
+    // Auto-tick linked habit for today
+    if (t.linkedHabitId) {
+      const h = S.habits.find(x=>x.id===t.linkedHabitId);
+      if (h && !h.completions.includes(t.completedAt)) {
+        h.completions.push(t.completedAt);
+        save('habits');
+        showToast(`Habit "${h.name}" ticked for today`, 'success');
+      }
+    }
+  } else {
+    // Un-completing: remove habit tick only if it was added by this task today
+    if (t.linkedHabitId && t.completedAt === todayStr()) {
+      const h = S.habits.find(x=>x.id===t.linkedHabitId);
+      if (h) {
+        h.completions = h.completions.filter(d=>d!==todayStr());
+        save('habits');
+      }
+    }
+    t.completedAt = null;
+  }
   save('tasks');
   if (currentView==='tasks') renderTasks();
   if (currentView==='dashboard') renderDashboard();
+  if (currentView==='habits') renderHabits();
 }
 
 function deleteTask(id) {
   S.tasks = S.tasks.filter(x=>x.id!==id);
   save('tasks');
   renderView(currentView);
+}
+
+function discardTask(id) {
+  S.currentProcContext  = 'discard';
+  S.currentProcTaskId   = id;
+  S.currentProcTags     = [];
+  const t = S.tasks.find(x=>x.id===id);
+  document.getElementById('proc-task-name').textContent = t?.title || '';
+  document.querySelectorAll('.proc-tag').forEach(el=>el.classList.remove('selected'));
+  document.getElementById('modal-proc').classList.add('open');
 }
 
 function openEditTask(id) {
@@ -2234,6 +2277,11 @@ function openEditTask(id) {
   document.getElementById('edit-task-category').value = t.category;
   document.getElementById('edit-task-due').value = t.dueDate || '';
   document.getElementById('edit-task-recurring').value = t.recurring || '';
+  // Populate habit dropdown
+  const sel = document.getElementById('edit-task-habit');
+  sel.innerHTML = '<option value="">No habit link</option>' +
+    S.habits.map(h=>`<option value="${h.id}">${h.name}</option>`).join('');
+  sel.value = t.linkedHabitId ? String(t.linkedHabitId) : '';
   document.getElementById('modal-edit-task').classList.add('open');
 }
 
@@ -2241,11 +2289,13 @@ function saveEditTask() {
   const id = Number(document.getElementById('edit-task-id').value);
   const t = S.tasks.find(x=>x.id===id);
   if (!t) return;
-  t.title     = document.getElementById('edit-task-title').value.trim() || t.title;
-  t.priority  = document.getElementById('edit-task-priority').value;
-  t.category  = document.getElementById('edit-task-category').value;
-  t.dueDate   = document.getElementById('edit-task-due').value;
-  t.recurring = document.getElementById('edit-task-recurring').value;
+  t.title          = document.getElementById('edit-task-title').value.trim() || t.title;
+  t.priority       = document.getElementById('edit-task-priority').value;
+  t.category       = document.getElementById('edit-task-category').value;
+  t.dueDate        = document.getElementById('edit-task-due').value;
+  t.recurring      = document.getElementById('edit-task-recurring').value;
+  const hid        = document.getElementById('edit-task-habit').value;
+  t.linkedHabitId  = hid ? Number(hid) : null;
   save('tasks');
   closeModal('modal-edit-task');
   renderView(currentView);
@@ -2413,20 +2463,26 @@ function renderHabits() {
     return;
   }
 
-  const last7 = getLast7Days();
+  const weekDays  = getCurrentWeekDays();
+  const dayLabels = ['M','T','W','T','F','S','S'];
+  const todayD    = todayStr();
 
   el.innerHTML = S.habits.map(h => {
     const streak   = calcStreak(h);
     const target   = h.weeklyTarget || 3;
-    const thisWeek = last7.filter(d => h.completions.includes(d)).length;
+    const thisWeek = weekDays.filter(d => h.completions.includes(d)).length;
     const weekPct  = Math.min(100, Math.round(thisWeek / target * 100));
     const barColor = weekPct >= 100 ? 'var(--t-green)' : weekPct >= 50 ? 'var(--t-orange)' : 'var(--t-red)';
     const expanded = expandedHabits.has(h.id);
 
-    const dots = last7.map(d =>
-      `<div class="habit-dot ${h.completions.includes(d)?'done':''}"
-        onclick="event.stopPropagation();toggleHabit(${h.id},'${d}')" title="${d}"></div>`
-    ).join('');
+    const dots = weekDays.map((d, i) => {
+      const isFuture = d > todayD;
+      return `<div class="habit-dot-wrap" title="${d}">
+        <div class="habit-dot-label">${dayLabels[i]}</div>
+        <div class="habit-dot ${h.completions.includes(d)?'done':''} ${isFuture?'future':''}"
+          onclick="event.stopPropagation();${isFuture?'':` toggleHabit(${h.id},'${d}')`}"></div>
+      </div>`;
+    }).join('');
 
     return `
     <div class="habit-card ${expanded?'expanded':''}" id="hcard-${h.id}">
@@ -2799,6 +2855,14 @@ function saveProcReason() {
     const found = findCardById(S.currentProcTaskId);
     if (found) { found.card.procReasons = S.currentProcTags; saveProjects(); }
     S.currentProcContext = null;
+  } else if (S.currentProcContext === 'discard') {
+    S.tasks = S.tasks.filter(x=>x.id!==S.currentProcTaskId);
+    save('tasks');
+    S.currentProcContext = null;
+    closeModal('modal-proc');
+    renderView(currentView);
+    showToast('Task discarded', 'info');
+    return;
   } else {
     const t = S.tasks.find(x=>x.id===S.currentProcTaskId);
     if (t) { t.procReasons = S.currentProcTags; save('tasks'); }
@@ -3070,6 +3134,18 @@ function todayStr() { return new Date().toISOString().split('T')[0]; }
 function getLast7Days() {
   return Array.from({length:7},(_,i)=>{
     const d=new Date(); d.setDate(d.getDate()-6+i);
+    return d.toISOString().split('T')[0];
+  });
+}
+
+function getCurrentWeekDays() {
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (dow===0 ? 6 : dow-1));
+  return Array.from({length:7}, (_,i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate()+i);
     return d.toISOString().split('T')[0];
   });
 }
