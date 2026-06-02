@@ -3282,6 +3282,7 @@ function initProjects() {
 function saveProjects() {
   localStorage.setItem('cb_projects', JSON.stringify(S.projects));
   localStorage.setItem('cb_activeProjectId', S.activeProjectId);
+  scheduleSyncToCloud();
 }
 
 function getActiveProject() {
@@ -4384,9 +4385,9 @@ const SYNC_KEYS = ['tasks','habits','goals','accountability','brainDump','deepWo
                    'decisions','journal','weeklyReviews','timeBlocks','projects',
                    'badHabits','gratitude'];
 
-async function syncToCloud() {
+async function syncToCloud(silent=false) {
   if (!currentUser || !fbDb) return;
-  setSyncStatus('saving');
+  if (!silent) setSyncStatus('saving');
   try {
     const payload = {};
     SYNC_KEYS.forEach(k => { payload[k] = S[k] || []; });
@@ -4395,7 +4396,7 @@ async function syncToCloud() {
     await fbDb.collection('users').doc(currentUser.uid)
               .collection('data').doc('monograph')
               .set(payload, { merge: true });
-    setSyncStatus('saved');
+    if (!silent) setSyncStatus('saved');
   } catch(e) {
     setSyncStatus('error');
     console.warn('Sync failed:', e);
@@ -4438,7 +4439,7 @@ function forceSyncToCloud() {
 function scheduleSyncToCloud() {
   if (!currentUser) return;
   clearTimeout(syncDebounceTimer);
-  syncDebounceTimer = setTimeout(syncToCloud, 2000);
+  syncDebounceTimer = setTimeout(() => syncToCloud(true), 2000);
 }
 
 function setSyncStatus(state) {
